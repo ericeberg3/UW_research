@@ -1,3 +1,6 @@
+# Contains functions to convert DTS data to displacement data as well as the function that gets coefficients for 
+# displacement data using SINDy
+
 import numpy as np
 import scipy
 from tqdm import tqdm
@@ -72,4 +75,74 @@ def DTS_to_disp(n_contours, filtered_arr, plot_times_zoomed, plot_dists_zoomed):
         disps_interp[:, i] = np.interp(depths_interp, depths[real_inds, i], displacements[real_inds, i] - np.nanmedian(displacements[real_inds, i]))
         disps_interp[:, i] = scipy.ndimage.gaussian_filter(disps_interp[:, i], 1)
 
-    return disps_interp
+    return disps_interp, depths_interp
+
+def get_coefs(x, t, disps_interp, sparsity, control_vars, control_vars_names):
+    dt = t[1] - t[0]
+    dx = x[1] - x[0]
+    
+    u_sol = disps_interp
+    v_sol = ps.SmoothedFiniteDifference(axis=1)._differentiate(u_sol, t=dt)
+    
+    # feature_value[:, 1] = ps.SmoothedFiniteDifference(axis=0)._differentiate(avg_temp, t=dt) 
+
+    u = np.zeros((len(x), len(t), 2))
+    u[:, :, 0] = u_sol
+    u[:, :, 1] = v_sol
+    u_dot = ps.SmoothedFiniteDifference(axis=1)._differentiate(u, t=dt)
+
+    control_vars_filled = np.zeros((len(x), len(t), len(control_vars_names)))
+    for j in range(len(x)): control_vars_filled[j, :, :] = control_vars
+
+    library_functions = [
+        lambda x: x,
+        lambda x: x * x,
+        lambda x, y: x * y
+    ]
+    library_function_names = [
+        lambda x: x,
+        lambda x: x + x,
+        lambda x, y: x + y
+    ]
+
+    parameter_lib = ps.PolynomialLibrary(degree=1, include_bias=False)
+    
+    pde_lib = ps.PDELibrary(
+        library_functions=library_functions,
+        function_names=library_function_names,
+        derivative_order=2,
+        spatial_grid=x,
+        include_bias=False,
+        is_uniform=True,
+        periodic=True
+    )
+
+    lib = ps.ParameterizedLibrary(
+        feature_library=pde_lib,
+        parameter_library=parameter_lib,
+        num_features=2,
+        num_parameters=len(control_vars_names)
+    )
+
+    optimizer = ps.STLSQ(
+        threshold=sparsity, # 8e-2
+        max_iter=10000,
+        normalize_columns=True,
+    )
+    
+    feat_names = ['u', '(du/dt)']
+    feat_names.extend(control_vars_names)
+    
+    model = ps.SINDy(feature_library=lib, feature_names=feat_names, optimizer=optimizer)
+
+    try: model.fit(u, x_dot=u_dot, u=control_vars_filled, quiet=True)
+    except: return model.get_feature_names(), np.zeros(len(model.get_feature_names())), 0
+
+    # Get the coefficients
+    coefficients = model.coefficients()
+
+    # Get the term names
+    feature_names = model.get_feature_names()
+    score = model.score(u,t=dt, u=control_vars_filled)
+
+    return feature_names, coefficients[1, :], score

@@ -37,3 +37,4 @@ def getDTSdata():
     plot_dists = dists[d_idx_start:d_idx_end]
 
     return plot_times, plot_dists, plot_arr
+
