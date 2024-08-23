@@ -5,6 +5,7 @@ import numpy as np
 import scipy
 from tqdm import tqdm
 from PyAstronomy import pyaC
+import pysindy as ps
 
 def DTS_to_disp(n_contours, filtered_arr, plot_times_zoomed, plot_dists_zoomed):
     contour_values = np.linspace(np.percentile(filtered_arr[~np.isnan(filtered_arr)],1), np.percentile(filtered_arr[~np.isnan(filtered_arr)],99), n_contours) # np.linspace(1.18, 2.05, n_contours) # n
@@ -49,7 +50,7 @@ def DTS_to_disp(n_contours, filtered_arr, plot_times_zoomed, plot_dists_zoomed):
 
     depths = np.empty(np.shape(contour_points_arr))
     displacements = np.empty(np.shape(contour_points_arr))
-    median_sub_window = 144
+    median_sub_window = 144 * 2 # 144
 
     # filter = scipy.signal.butter(1, 0.5, 'hp', fs=5, output='sos', analog=False) # 5 represents 5 second sampling rate. Used to be 0.5 cutoff
 
